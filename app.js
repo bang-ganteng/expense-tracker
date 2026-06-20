@@ -74,14 +74,51 @@ async function trySync() {
     return false;
 }
 
+// Load from GitHub Pages raw JSON
+async function loadFromGitHub() {
+    try {
+        // Try to load transactions.json from the same origin (GitHub Pages)
+        const res = await fetch('./transactions.json', { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && Array.isArray(data.transactions)) {
+                return data.transactions;
+            }
+        }
+    } catch {}
+    return null;
+}
+
 async function loadData() {
+    // 1. Try API first
     if (useAPI || await trySync()) {
         const data = await apiGet();
         if (data && Array.isArray(data)) {
-            saveLocal(data); // cache locally
+            saveLocal(data);
             return data;
         }
     }
+
+    // 2. Try loading from GitHub Pages JSON
+    const githubData = await loadFromGitHub();
+    if (githubData && githubData.length > 0) {
+        // Merge with local data (avoid duplicates by id)
+        const local = loadLocal();
+        const localIds = new Set(local.map(t => t.id));
+        const newItems = githubData.filter(t => !localIds.has(t.id));
+        if (newItems.length > 0) {
+            const merged = [...local, ...newItems];
+            saveLocal(merged);
+            return merged;
+        }
+        // If local is empty but GitHub has data, use GitHub data
+        if (local.length === 0) {
+            saveLocal(githubData);
+            return githubData;
+        }
+    }
+
+    // 3. Fallback to local only
     return loadLocal();
 }
 
@@ -458,15 +495,15 @@ async function renderHistory() {
 async function deleteTransaction(id) {
     if (!confirm('Hapus transaksi ini?')) return;
     await removeData(id);
-    renderHistory();
+    await renderHistory();
     showToast('🗑️ Transaksi dihapus', 'success');
 }
 
-function clearAllData() {
+async function clearAllData() {
     if (!confirm('Hapus SEMUA data transaksi? Tindakan ini tidak bisa dibatalkan!')) return;
     localStorage.removeItem(STORAGE_KEY);
-    renderHistory();
-    renderDashboard();
+    await renderHistory();
+    await renderDashboard();
     showToast('🗑️ Semua data dihapus', 'success');
 }
 
@@ -529,4 +566,9 @@ function showToast(msg, type = 'success') {
 document.getElementById('currentDate').textContent = formatDate(todayStr());
 document.getElementById('tanggal').value = todayStr();
 setType('expense');
-renderDashboard();
+initApp();
+
+async function initApp() {
+    await loadData();        // wait for data to load
+    renderDashboard();       // now render with populated data
+}
