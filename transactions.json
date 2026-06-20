@@ -1,0 +1,13 @@
+{
+  "transactions": [
+    {
+      "id": 1750400216000,
+      "type": "expense",
+      "date": "2026-06-20",
+      "amount": 246400,
+      "category": "Transport",
+      "description": "Isi BBM Pertalite 24.64L @ Rp 10.000/L - SPBU BSD City (F1043AS)",
+      "createdAt": "2026-06-20T16:30:00.000Z"
+    }
+  ]
+}
