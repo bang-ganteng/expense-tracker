@@ -1,31 +1,111 @@
-// ========== DATA STORE ==========
+// ========== DATA STORE (API + LocalStorage hybrid) ==========
 const STORAGE_KEY = 'mullen_expense_tracker';
 const CAT_KEY = 'mullen_categories';
+
+// API base URL — will be set after deploy
+const API_BASE = localStorage.getItem('mullen_api_url') || '';
 
 const DEFAULT_CATEGORIES = {
     expense: ['Makanan', 'Transport', 'Belanja', 'Hiburan', 'Kesehatan', 'Tagihan', 'Pendidikan', 'Lainnya'],
     income: ['Gaji', 'Freelance', 'Investasi', 'Bonus', 'Lainnya']
 };
 
-function loadData() {
+// ========== API CALLS ==========
+async function apiGet(params = {}) {
+    if (!API_BASE) return null;
+    const qs = new URLSearchParams(params).toString();
     try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch { return []; }
+        const res = await fetch(`${API_BASE}/api/transactions?${qs}`);
+        return await res.json();
+    } catch { return null; }
 }
 
-function saveData(data) {
+async function apiPost(data) {
+    if (!API_BASE) return null;
+    try {
+        const res = await fetch(`${API_BASE}/api/transactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return await res.json();
+    } catch { return null; }
+}
+
+async function apiDelete(id) {
+    if (!API_BASE) return null;
+    try {
+        const res = await fetch(`${API_BASE}/api/transactions/${id}`, { method: 'DELETE' });
+        return await res.json();
+    } catch { return null; }
+}
+
+// ========== LOCAL STORAGE ==========
+function loadLocal() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch { return []; }
+}
+
+function saveLocal(data) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 function loadCategories() {
     try {
         const c = JSON.parse(localStorage.getItem(CAT_KEY));
-        return c || DEFAULT_CATEGORIES;
+        return c || { ...DEFAULT_CATEGORIES };
     } catch { return { ...DEFAULT_CATEGORIES }; }
 }
 
 function saveCategories(cats) {
     localStorage.setItem(CAT_KEY, JSON.stringify(cats));
+}
+
+// ========== SYNC ==========
+let useAPI = false;
+
+async function trySync() {
+    const url = localStorage.getItem('mullen_api_url');
+    if (!url) return false;
+    try {
+        const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(3000) });
+        if (res.ok) { useAPI = true; return true; }
+    } catch {}
+    return false;
+}
+
+async function loadData() {
+    if (useAPI || await trySync()) {
+        const data = await apiGet();
+        if (data && Array.isArray(data)) {
+            saveLocal(data); // cache locally
+            return data;
+        }
+    }
+    return loadLocal();
+}
+
+async function saveData(tx) {
+    // Always save locally
+    const local = loadLocal();
+    local.push(tx);
+    saveLocal(local);
+
+    // Also save to API if available
+    if (useAPI) {
+        const result = await apiPost(tx);
+        if (result) return result;
+    }
+    return tx;
+}
+
+async function removeData(id) {
+    // Remove locally
+    const local = loadLocal().filter(t => t.id !== id);
+    saveLocal(local);
+
+    // Remove from API if available
+    if (useAPI) await apiDelete(id);
 }
 
 // ========== HELPERS ==========
@@ -50,7 +130,7 @@ function formatShortDate(str) {
 function getMonthOptions() {
     const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
     const opts = [];
-    const data = loadData();
+    const data = loadLocal();
     const monthSet = new Set(data.map(t => t.date.substring(0, 7)));
     monthSet.forEach(m => opts.push(m));
     opts.sort().reverse();
@@ -75,8 +155,8 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 // ========== DASHBOARD ==========
-function renderDashboard() {
-    const data = loadData();
+async function renderDashboard() {
+    const data = await loadData();
     const today = todayStr();
     const todayTx = data.filter(t => t.date === today);
 
@@ -90,10 +170,8 @@ function renderDashboard() {
     document.getElementById('todayBalance').textContent = formatRp(todayIncome - todayExpense);
     document.getElementById('totalBalance').textContent = formatRp(totalIncome - totalExpense);
 
-    // Category chart
     renderCategoryChart(todayTx);
 
-    // Recent transactions
     const recentList = document.getElementById('recentTransactions');
     const recent = data.slice(-5).reverse();
     if (recent.length === 0) {
@@ -109,6 +187,18 @@ function renderDashboard() {
                 <span class="t-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatRp(t.amount)}</span>
             </div>
         `).join('');
+    }
+
+    // Show connection status
+    const statusEl = document.getElementById('connectionStatus');
+    if (statusEl) {
+        if (useAPI) {
+            statusEl.textContent = '☁️ Connected to API';
+            statusEl.className = 'connection-status online';
+        } else {
+            statusEl.textContent = '📱 Local Mode';
+            statusEl.className = 'connection-status local';
+        }
     }
 }
 
@@ -213,14 +303,13 @@ function parseOcrResult() {
 
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     let total = 0;
-    const items = [];
 
-    // Try to find total
     const totalPatterns = [
         /total\s*[:=]?\s*R?p?([\d.,]+)/i,
         /grand\s*total\s*[:=]?\s*R?p?([\d.,]+)/i,
         /bayar\s*[:=]?\s*R?p?([\d.,]+)/i,
         /TOTAL\s*R?p?([\d.,]+)/,
+        /dibayar\s*konsumen\s*[:=]?\s*R?p?([\d.,]+)/i,
     ];
 
     for (const line of lines) {
@@ -233,7 +322,6 @@ function parseOcrResult() {
         }
     }
 
-    // If no total found, sum all numbers
     if (total === 0) {
         const numbers = [];
         for (const line of lines) {
@@ -245,24 +333,18 @@ function parseOcrResult() {
                 });
             }
         }
-        if (numbers.length > 0) {
-            total = Math.max(...numbers);
-        }
+        if (numbers.length > 0) total = Math.max(...numbers);
     }
 
-    // Auto-fill form
     document.getElementById('tanggal').value = todayStr();
-    if (total > 0) {
-        document.getElementById('jumlah').value = total;
-    }
+    if (total > 0) document.getElementById('jumlah').value = total;
 
-    // Try to guess category from text
     const cats = loadCategories();
     const expenseCats = cats.expense || [];
     const textLower = text.toLowerCase();
     const catMap = {
         'makanan': ['restoran', 'makan', 'food', 'cafe', 'kopi', 'warung', 'indomaret', 'alfamart', 'minuman', 'nasi', 'mie', 'sate', 'bakso'],
-        'transport': ['bensin', 'bbm', 'ojek', 'taxi', 'grab', 'gojek', 'parkir', 'tol', 'bri', 'bca', 'transfer'],
+        'transport': ['bensin', 'bbm', 'ojek', 'taxi', 'grab', 'gojek', 'parkir', 'tol', 'pertamina', 'spbu', 'shell', 'bp'],
         'belanja': ['indomaret', 'alfamart', 'supermarket', 'mall', 'tokopedia', 'shopee', 'lazada', 'belanja'],
         'hiburan': ['bioskop', 'netflix', 'spotify', 'game', 'hiburan', 'nonton'],
         'kesehatan': ['apotek', 'klinik', 'rumah sakit', 'dokter', 'obat', 'kesehatan'],
@@ -278,30 +360,21 @@ function parseOcrResult() {
         }
     }
 
-    if (matchedCat) {
-        document.getElementById('kategori').value = matchedCat;
-    }
-
-    // Use first line as description
-    if (lines.length > 0) {
-        document.getElementById('deskripsi').value = lines[0].substring(0, 60);
-    }
+    if (matchedCat) document.getElementById('kategori').value = matchedCat;
+    if (lines.length > 0) document.getElementById('deskripsi').value = lines[0].substring(0, 60);
 
     showToast('✅ Struk berhasil di-parse! Silakan periksa & lengkapi data.', 'success');
 }
 
 function parseNumber(str) {
     str = str.replace(/[^\d.,]/g, '');
-    if (str.includes(',')) {
-        str = str.replace(/\./g, '').replace(',', '.');
-    }
+    if (str.includes(',')) str = str.replace(/\./g, '').replace(',', '.');
     return parseInt(str, 10) || 0;
 }
 
 // Form submit
-document.getElementById('transactionForm').addEventListener('submit', (e) => {
+document.getElementById('transactionForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = loadData();
     const tx = {
         id: Date.now(),
         type: currentType,
@@ -311,8 +384,8 @@ document.getElementById('transactionForm').addEventListener('submit', (e) => {
         description: document.getElementById('deskripsi').value.trim(),
         createdAt: new Date().toISOString()
     };
-    data.push(tx);
-    saveData(data);
+
+    await saveData(tx);
     e.target.reset();
     document.getElementById('tanggal').value = todayStr();
     setType('expense');
@@ -321,13 +394,12 @@ document.getElementById('transactionForm').addEventListener('submit', (e) => {
 });
 
 // ========== HISTORY ==========
-function renderHistory() {
-    const data = loadData();
+async function renderHistory() {
+    const data = await loadData();
     const list = document.getElementById('historyList');
     const monthFilter = document.getElementById('filterMonth').value;
     const typeFilter = document.getElementById('filterType').value;
 
-    // Populate month filter
     const months = getMonthOptions();
     const currentMonth = document.getElementById('filterMonth').value;
     document.getElementById('filterMonth').innerHTML =
@@ -345,7 +417,6 @@ function renderHistory() {
         return;
     }
 
-    // Group by date
     const grouped = {};
     filtered.forEach(t => {
         if (!grouped[t.date]) grouped[t.date] = [];
@@ -384,11 +455,9 @@ function renderHistory() {
     }).join('');
 }
 
-function deleteTransaction(id) {
+async function deleteTransaction(id) {
     if (!confirm('Hapus transaksi ini?')) return;
-    let data = loadData();
-    data = data.filter(t => t.id !== id);
-    saveData(data);
+    await removeData(id);
     renderHistory();
     showToast('🗑️ Transaksi dihapus', 'success');
 }
@@ -401,7 +470,6 @@ function clearAllData() {
     showToast('🗑️ Semua data dihapus', 'success');
 }
 
-// Filter listeners
 document.getElementById('filterMonth').addEventListener('change', renderHistory);
 document.getElementById('filterType').addEventListener('change', renderHistory);
 
