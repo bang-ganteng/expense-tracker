@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💰 Expense Tracker - Mullen</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1>💰 Expense Tracker</h1>
+                <p class="subtitle">by Mullen — Asisten Bang Ganteng</p>
+            </div>
+            <div class="header-right">
+                <span class="current-date" id="currentDate"></span>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs">
+            <button class="tab active" data-tab="dashboard">📊 Dashboard</button>
+            <button class="tab" data-tab="add">➕ Tambah Transaksi</button>
+            <button class="tab" data-tab="history">📋 Riwayat</button>
+            <button class="tab" data-tab="categories">🏷️ Kategori</button>
+        </nav>
+
+        <!-- Dashboard Tab -->
+        <section class="tab-content active" id="dashboard">
+            <div class="summary-cards">
+                <div class="card card-income">
+                    <div class="card-icon">📈</div>
+                    <div class="card-info">
+                        <h3>Pemasukan Hari Ini</h3>
+                        <p class="amount" id="todayIncome">Rp 0</p>
+                    </div>
+                </div>
+                <div class="card card-expense">
+                    <div class="card-icon">📉</div>
+                    <div class="card-info">
+                        <h3>Pengeluaran Hari Ini</h3>
+                        <p class="amount" id="todayExpense">Rp 0</p>
+                    </div>
+                </div>
+                <div class="card card-balance">
+                    <div class="card-icon">💎</div>
+                    <div class="card-info">
+                        <h3>Saldo Hari Ini</h3>
+                        <p class="amount" id="todayBalance">Rp 0</p>
+                    </div>
+                </div>
+                <div class="card card-total">
+                    <div class="card-icon">🏦</div>
+                    <div class="card-info">
+                        <h3>Total Saldo</h3>
+                        <p class="amount" id="totalBalance">Rp 0</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart Area -->
+            <div class="chart-section">
+                <h2>📊 Pengeluaran per Kategori (Hari Ini)</h2>
+                <div class="chart-container" id="categoryChart"></div>
+            </div>
+
+            <!-- Recent Transactions -->
+            <div class="recent-section">
+                <h2>🕐 Transaksi Terakhir</h2>
+                <div class="recent-list" id="recentTransactions"></div>
+            </div>
+        </section>
+
+        <!-- Add Transaction Tab -->
+        <section class="tab-content" id="add">
+            <div class="add-container">
+                <!-- Struk Upload -->
+                <div class="upload-section">
+                    <h2>📷 Upload Struk / Nota</h2>
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-placeholder" id="uploadPlaceholder">
+                            <span class="upload-icon">📸</span>
+                            <p>Klik atau drag & drop struk di sini</p>
+                            <p class="upload-hint">Format: JPG, PNG, WEBP (max 5MB)</p>
+                        </div>
+                        <img id="previewImage" class="preview-image" alt="Preview">
+                        <input type="file" id="fileInput" accept="image/*" hidden>
+                    </div>
+                    <div id="ocrResult" class="ocr-result hidden">
+                        <h3>🔍 Hasil Baca Struk:</h3>
+                        <textarea id="ocrText" placeholder="Hasil pembacaan struk akan muncul di sini..."></textarea>
+                        <button class="btn btn-primary" onclick="parseOcrResult()">✨ Parse & Isi Otomatis</button>
+                    </div>
+                </div>
+
+                <!-- Manual Form -->
+                <div class="form-section">
+                    <h2>📝 Form Transaksi</h2>
+                    <form id="transactionForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Tipe</label>
+                                <div class="toggle-group">
+                                    <button type="button" class="toggle-btn active" data-type="expense" onclick="setType('expense')">📉 Pengeluaran</button>
+                                    <button type="button" class="toggle-btn" data-type="income" onclick="setType('income')">📈 Pemasukan</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="tanggal">Tanggal</label>
+                                <input type="date" id="tanggal" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="jumlah">Jumlah (Rp)</label>
+                                <input type="number" id="jumlah" placeholder="0" min="0" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="kategori">Kategori</label>
+                                <select id="kategori" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="deskripsi">Deskripsi</label>
+                                <input type="text" id="deskripsi" placeholder="Contoh: Belanja di Indomaret" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-submit">💾 Simpan Transaksi</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- History Tab -->
+        <section class="tab-content" id="history">
+            <div class="history-header">
+                <h2>📋 Riwayat Transaksi</h2>
+                <div class="history-filters">
+                    <select id="filterMonth">
+                        <option value="">Semua Bulan</option>
+                    </select>
+                    <select id="filterType">
+                        <option value="">Semua Tipe</option>
+                        <option value="income">📈 Pemasukan</option>
+                        <option value="expense">📉 Pengeluaran</option>
+                    </select>
+                    <button class="btn btn-danger" onclick="clearAllData()">🗑️ Hapus Semua</button>
+                </div>
+            </div>
+            <div class="history-list" id="historyList"></div>
+        </section>
+
+        <!-- Categories Tab -->
+        <section class="tab-content" id="categories">
+            <h2>🏷️ Kelola Kategori</h2>
+            <div class="category-form">
+                <input type="text" id="newCategoryName" placeholder="Nama kategori baru...">
+                <select id="newCategoryType">
+                    <option value="expense">📉 Pengeluaran</option>
+                    <option value="income">📈 Pemasukan</option>
+                </select>
+                <button class="btn btn-primary" onclick="addCategory()">➕ Tambah</button>
+            </div>
+            <div class="category-lists">
+                <div class="category-col">
+                    <h3>📉 Kategori Pengeluaran</h3>
+                    <ul id="expenseCategories"></ul>
+                </div>
+                <div class="category-col">
+                    <h3>📈 Kategori Pemasukan</h3>
+                    <ul id="incomeCategories"></ul>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
