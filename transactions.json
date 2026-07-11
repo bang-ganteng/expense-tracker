@@ -8,6 +8,15 @@
       "category": "Transport",
       "description": "Isi BBM Pertalite 24.64L @ Rp 10.000/L - SPBU BSD City (F1043AS)",
       "createdAt": "2026-06-20T16:30:00.000Z"
+    },
+    {
+      "id": 1783788519689,
+      "type": "expense",
+      "date": "2026-07-08",
+      "amount": 1000000,
+      "category": "Belanja",
+      "description": "SOMBAOPU OLE-OLE - Bakso Ati Raja 50pcs, ManTAO Pare Isi 9, DOS PACKING, Kacang Pakarena 450gr",
+      "createdAt": "2026-07-08T00:00:00.000Z"
     }
   ]
 }
